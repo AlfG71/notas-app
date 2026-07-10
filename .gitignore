@@ -5,3 +5,4 @@ dist
 .DS_Store
 feedbackkit-v1.jsx
 .vercel
+.env*
