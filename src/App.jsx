@@ -28,7 +28,10 @@ async function uploadScreenshot(sessionId, itemId, dataUrl) {
     headers: { "apikey": SUPABASE_ANON_KEY, "Authorization": `Bearer ${SUPABASE_ANON_KEY}`, "Content-Type": "image/png" },
     body: blob,
   });
-  if (!res.ok) throw new Error("Upload failed");
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Upload failed ${res.status}: ${errText}`);
+  }
   return `${SUPABASE_URL}/storage/v1/object/public/screenshots/${path}`;
 }
 
@@ -56,15 +59,23 @@ const T = {
       feedback: { label: "General thought",      hint: "A reaction or observation" },
       idea:     { label: "Idea or suggestion",   hint: "Something that could be better" },
     },
-    severity: { label: "How bad is it?", low: "Minor", medium: "Moderate", high: "Can't continue" },
-    descLabel:       { bug: "What went wrong?",        feedback: "What's on your mind?",   idea: "Describe the improvement" },
-    descPlaceholder: { bug: "What happened vs. what you expected...", feedback: "Share your reaction...", idea: "What would make this better..." },
-    reproLabel: "What were you doing just before this happened?",
-    reproOptional: "optional",
-    reproPlaceholder: "e.g. I tapped Save after changing the price, then the screen went blank...",
+    severity: { label: "How much is this blocking you?", low: "I can work around it", medium: "It's slowing me down", high: "I can't continue" },
+    descLabel: {
+      bug:      "What happened — and what did you expect to happen instead?",
+      feedback: "What caught your attention? What felt off, confusing, or unexpected?",
+      idea:     "What would you change or add, and how would it help you?",
+    },
+    descPlaceholder: {
+      bug:      "e.g. I clicked Save and nothing happened. I expected the record to update and a confirmation to appear...",
+      feedback: "e.g. The layout on this page felt confusing — I wasn't sure where to look first...",
+      idea:     "e.g. It would help to have a filter by date here so I don't have to scroll through everything...",
+    },
+    reproLabel: "Walk us through exactly what you were doing just before this happened.",
+    reproOptional: "optional but very helpful",
+    reproPlaceholder: "e.g. I opened the Reservations tab, searched for a name, clicked on the result, then tapped Edit...",
     autoCapture: "captured automatically",
-    annotateHint: "Draw, arrow, or box the problem",
-    annotateSubHint: "Use the toolbar · optional but helpful",
+    annotateHint: "Draw, arrow, box, or add text to mark the problem",
+    annotateSubHint: "Select a tool above · optional but very helpful",
     skip: "Skip",
     looksGood: "Done →",
     continueWithout: "Continue →",
@@ -84,8 +95,8 @@ const T = {
     errors: n => `${n} console error${n !== 1 ? "s" : ""}`,
     toolDraw: "Pen", toolArrow: "Arrow", toolBox: "Box",
     undo: "Undo", clear: "Clear",
-    connecting: "Connecting...", connected: "Session ready", offline: "Offline mode",
-    severity_low: "Minor", severity_medium: "Moderate", severity_high: "Can't continue",
+    connecting: "Connecting...", connected: "Session ready", offline: "No session — use a session link",
+    severity_low: "I can work around it", severity_medium: "It's slowing me down", severity_high: "I can't continue",
   },
   es: {
     trigger: "Dejar una Nota",
@@ -96,15 +107,23 @@ const T = {
       feedback: { label: "Comentario general",   hint: "Una reacción u observación" },
       idea:     { label: "Idea o sugerencia",    hint: "Algo que podría mejorar" },
     },
-    severity: { label: "¿Qué tan grave es?", low: "Leve", medium: "Moderado", high: "No puedo continuar" },
-    descLabel:       { bug: "¿Qué salió mal?",         feedback: "¿Qué tienes en mente?",    idea: "Describe la mejora" },
-    descPlaceholder: { bug: "Qué pasó vs. qué esperabas...", feedback: "Comparte tu reacción...", idea: "¿Qué lo haría mejor..." },
-    reproLabel: "¿Qué estabas haciendo justo antes?",
-    reproOptional: "opcional",
-    reproPlaceholder: "Ej: toqué Guardar después de cambiar el precio y la pantalla quedó en blanco...",
+    severity: { label: "¿Cuánto te está bloqueando esto?", low: "Puedo continuar con dificultad", medium: "Me está frenando", high: "No puedo continuar" },
+    descLabel: {
+      bug:      "¿Qué pasó — y qué esperabas que pasara en su lugar?",
+      feedback: "¿Qué llamó tu atención? ¿Qué se sintió confuso o inesperado?",
+      idea:     "¿Qué cambiarías o agregarías, y cómo te ayudaría?",
+    },
+    descPlaceholder: {
+      bug:      "Ej: hice clic en Guardar y no pasó nada. Esperaba que el registro se actualizara...",
+      feedback: "Ej: el diseño de esta página se sintió confuso — no sabía dónde mirar primero...",
+      idea:     "Ej: ayudaría tener un filtro por fecha aquí para no tener que desplazarme por todo...",
+    },
+    reproLabel: "Cuéntanos exactamente qué estabas haciendo justo antes de que esto ocurriera.",
+    reproOptional: "opcional pero muy útil",
+    reproPlaceholder: "Ej: abrí la pestaña de Reservaciones, busqué un nombre, hice clic en el resultado, luego toqué Editar...",
     autoCapture: "capturado automáticamente",
-    annotateHint: "Dibuja, usa flechas o recuadra el problema",
-    annotateSubHint: "Usa la barra · opcional pero útil",
+    annotateHint: "Dibuja, flechas, recuadros o agrega texto para marcar el problema",
+    annotateSubHint: "Selecciona una herramienta arriba · opcional pero muy útil",
     skip: "Omitir",
     looksGood: "Listo →",
     continueWithout: "Continuar →",
@@ -124,8 +143,8 @@ const T = {
     errors: n => `${n} error${n !== 1 ? "es" : ""} de consola`,
     toolDraw: "Pluma", toolArrow: "Flecha", toolBox: "Recuadro",
     undo: "Deshacer", clear: "Limpiar",
-    connecting: "Conectando...", connected: "Sesión lista", offline: "Modo sin conexión",
-    severity_low: "Leve", severity_medium: "Moderado", severity_high: "No puedo continuar",
+    connecting: "Conectando...", connected: "Sesión lista", offline: "Sin sesión — usa un enlace de sesión",
+    severity_low: "Puedo continuar con dificultad", severity_medium: "Me está frenando", severity_high: "No puedo continuar",
   },
 };
 
@@ -137,10 +156,29 @@ const PAGES = [
 ];
 
 function harvestMeta(page) {
+  // Detect real browser from user agent
+  const ua = navigator.userAgent;
+  let browser = "Unknown";
+  if (ua.includes("Edg/"))         browser = `Edge ${ua.match(/Edg\/([\d.]+)/)?.[1] || ""}`;
+  else if (ua.includes("OPR/"))    browser = `Opera ${ua.match(/OPR\/([\d.]+)/)?.[1] || ""}`;
+  else if (ua.includes("Firefox/")) browser = `Firefox ${ua.match(/Firefox\/([\d.]+)/)?.[1] || ""}`;
+  else if (ua.includes("Safari/") && !ua.includes("Chrome")) browser = `Safari ${ua.match(/Version\/([\d.]+)/)?.[1] || ""}`;
+  else if (ua.includes("Chrome/")) browser = `Chrome ${ua.match(/Chrome\/([\d.]+)/)?.[1] || ""}`;
+
+  // Detect OS
+  let os = "Unknown";
+  if (ua.includes("Mac OS X"))  os = `macOS ${ua.match(/Mac OS X ([\d_]+)/)?.[1]?.replace(/_/g,".") || ""}`;
+  else if (ua.includes("Win"))  os = "Windows";
+  else if (ua.includes("Linux")) os = "Linux";
+  else if (ua.includes("iPhone") || ua.includes("iPad")) os = "iOS";
+  else if (ua.includes("Android")) os = "Android";
+
   return {
-    page: page.label, url: `https://demo-app.local/${page.id}`,
+    page: page.label,
+    url: window.location.href,
     timestamp: new Date().toISOString(),
-    browser: "Chrome 124", os: navigator.platform || "Unknown",
+    browser,
+    os,
     viewport: `${window.innerWidth}×${window.innerHeight}`,
     consoleErrors: page.hasError ? ["TypeError: Cannot read properties of undefined (reading 'date')"] : [],
     networkErrors: page.hasError ? ["GET /api/reservations/upcoming 500"] : [],
@@ -222,20 +260,28 @@ function AnnotationCanvas({ screenshotData, onAnnotated, lang }) {
   const t = T[lang];
   const canvasRef  = useRef(null);
   const imgRef     = useRef(null);
-  const [tool, setTool]     = useState("pen");
-  const [color, setColor]   = useState(RED);
+  const inputRef   = useRef(null);
+  const [tool, setTool]       = useState("pen");
+  const [color, setColor]     = useState(RED);
   const [strokes, setStrokes] = useState([]);
-  const drawing   = useRef(false);
-  const startPos  = useRef(null);
-  const livePts   = useRef([]);
+  const [textInput, setTextInput] = useState(null); // { x, y } — position only
+  const textValue  = useRef("");  // current typed value — ref avoids stale closure
+  const colorRef   = useRef(RED); // track color in ref too
+  const drawing    = useRef(false);
+  const startPos   = useRef(null);
+  const livePts    = useRef([]);
+  const committed  = useRef(false); // prevent double-commit from blur+enter
   const COLORS = [RED, "#F59E0B", "#22C55E", "#3B82F6", "#8B5CF6", INK];
 
-  function redrawAll(extra) {
+  // Keep colorRef in sync
+  useEffect(() => { colorRef.current = color; }, [color]);
+
+  function redrawAll(extra, strokesOverride) {
     const cv = canvasRef.current; if (!cv) return;
     const ctx = cv.getContext("2d");
     ctx.clearRect(0,0,cv.width,cv.height);
     if (imgRef.current?.complete) ctx.drawImage(imgRef.current,0,0,cv.width,cv.height);
-    strokes.forEach(s => drawOne(ctx,s));
+    (strokesOverride || strokes).forEach(s => drawOne(ctx,s));
     if (extra) drawOne(ctx,extra);
   }
 
@@ -255,10 +301,22 @@ function AnnotationCanvas({ screenshotData, onAnnotated, lang }) {
       ctx.lineTo(s.end.x-16*Math.cos(angle-0.4),s.end.y-16*Math.sin(angle-0.4));
       ctx.lineTo(s.end.x-16*Math.cos(angle+0.4),s.end.y-16*Math.sin(angle+0.4));
       ctx.closePath(); ctx.fillStyle=s.color; ctx.fill();
+    } else if (s.tool==="text" && s.text) {
+      ctx.fillStyle = s.color;
+      ctx.font = "bold 18px 'DM Sans', sans-serif";
+      ctx.fillText(s.text, s.s.x, s.s.y);
     }
   }
 
   useEffect(()=>{ redrawAll(); },[strokes]);
+
+  useEffect(()=>{
+    if (textInput && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.value = "";
+      textValue.current = "";
+    }
+  },[textInput]);
 
   function getPos(e) {
     const r=canvasRef.current.getBoundingClientRect();
@@ -267,14 +325,58 @@ function AnnotationCanvas({ screenshotData, onAnnotated, lang }) {
     return { x:(cx-r.left)*sx, y:(cy-r.top)*sy };
   }
 
-  function onDown(e) { e.preventDefault(); const p=getPos(e); drawing.current=true; startPos.current=p; livePts.current=[p]; }
+  function commitText() {
+    if (committed.current) return;
+    const val = textValue.current.trim();
+    if (!val) { setTextInput(null); textValue.current = ""; return; }
+    committed.current = true;
+    const pos = textInput; // capture current position
+    const col = colorRef.current;
+    const newStroke = { tool:"text", color:col, s:{ x:pos.x, y:pos.y }, text:val };
+    setStrokes(prev => {
+      const next = [...prev, newStroke];
+      requestAnimationFrame(() => {
+        redrawAll(null, next);
+        onAnnotated(canvasRef.current.toDataURL());
+      });
+      return next;
+    });
+    setTextInput(null);
+    textValue.current = "";
+    setTimeout(() => { committed.current = false; }, 100);
+  }
+
+  function onCanvasClick(e) {
+    if (tool !== "text") return;
+    if (textInput) {
+      commitText();
+      return;
+    }
+    const p = getPos(e);
+    committed.current = false;
+    setTextInput({ x: p.x, y: p.y });
+  }
+
+  function getCanvasScale() {
+    const cv = canvasRef.current;
+    if (!cv) return { scaleX:1, scaleY:1 };
+    const r = cv.getBoundingClientRect();
+    return { scaleX: r.width / cv.width, scaleY: r.height / cv.height };
+  }
+
+  function onDown(e) {
+    if (tool === "text") return;
+    e.preventDefault(); const p=getPos(e); drawing.current=true; startPos.current=p; livePts.current=[p];
+  }
   function onMove(e) {
+    if (tool === "text") return;
     e.preventDefault(); if (!drawing.current) return;
     const p=getPos(e);
     if (tool==="pen") { livePts.current=[...livePts.current,p]; redrawAll({tool:"pen",color,pts:livePts.current}); }
     else redrawAll({tool,color,s:startPos.current,end:p});
   }
   function onUp(e) {
+    if (tool === "text") return;
     if (!drawing.current) return; drawing.current=false;
     const r=canvasRef.current.getBoundingClientRect();
     const raw=e.changedTouches?e.changedTouches[0]:e;
@@ -284,12 +386,17 @@ function AnnotationCanvas({ screenshotData, onAnnotated, lang }) {
     setTimeout(()=>onAnnotated(canvasRef.current.toDataURL()),40);
   }
 
+  const TextIcon = () => (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/>
+    </svg>
+  );
+
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-      {/* Toolbar */}
       <div style={{ display:"flex", alignItems:"center", gap:6, padding:"6px 10px", background:LIGHT, borderRadius:8, border:`1px solid ${BORDER}`, flexWrap:"wrap" }}>
-        {[["pen",t.toolDraw,<PenIcon/>],["arrow",t.toolArrow,<ArrIcon/>],["rect",t.toolBox,<BoxIcon/>]].map(([id,lbl,icon])=>(
-          <button key={id} onClick={()=>setTool(id)}
+        {[["pen",t.toolDraw,<PenIcon/>],["arrow",t.toolArrow,<ArrIcon/>],["rect",t.toolBox,<BoxIcon/>],["text",lang==="en"?"Text":"Texto",<TextIcon/>]].map(([id,lbl,icon])=>(
+          <button key={id} onClick={()=>{ if(textInput) commitText(); setTool(id); }}
             style={{ display:"flex", alignItems:"center", gap:4, padding:"4px 9px", borderRadius:5, border:"none", cursor:"pointer", fontFamily:"'DM Sans',sans-serif", fontSize:11, fontWeight:500, transition:"all 0.12s", background:tool===id?INK:"transparent", color:tool===id?PAPER:SLATE }}>
             {icon}{lbl}
           </button>
@@ -299,17 +406,48 @@ function AnnotationCanvas({ screenshotData, onAnnotated, lang }) {
           <button key={c} onClick={()=>setColor(c)} style={{ width:16, height:16, borderRadius:"50%", background:c, border:color===c?`2.5px solid ${INK}`:`2px solid ${PAPER}`, outline:color===c?`1.5px solid ${INK}`:"none", cursor:"pointer", padding:0, flexShrink:0 }}/>
         ))}
         <div style={{ marginLeft:"auto", display:"flex", gap:5 }}>
-          <button onClick={()=>setStrokes(p=>p.slice(0,-1))} style={{ display:"flex", alignItems:"center", gap:3, padding:"4px 8px", borderRadius:5, border:`1px solid ${BORDER}`, cursor:"pointer", background:"#fff", color:SLATE, fontSize:11, fontFamily:"'DM Sans',sans-serif" }}><UndoIcon/>{t.undo}</button>
-          <button onClick={()=>{ setStrokes([]); onAnnotated(null); }} style={{ display:"flex", alignItems:"center", gap:3, padding:"4px 8px", borderRadius:5, border:`1px solid ${BORDER}`, cursor:"pointer", background:"#fff", color:SLATE, fontSize:11, fontFamily:"'DM Sans',sans-serif" }}><ErasIcon/>{t.clear}</button>
+          <button onClick={()=>{ setStrokes(p=>p.slice(0,-1)); setTextInput(null); textValue.current=""; }} style={{ display:"flex", alignItems:"center", gap:3, padding:"4px 8px", borderRadius:5, border:`1px solid ${BORDER}`, cursor:"pointer", background:"#fff", color:SLATE, fontSize:11, fontFamily:"'DM Sans',sans-serif" }}><UndoIcon/>{t.undo}</button>
+          <button onClick={()=>{ setStrokes([]); setTextInput(null); textValue.current=""; onAnnotated(null); }} style={{ display:"flex", alignItems:"center", gap:3, padding:"4px 8px", borderRadius:5, border:`1px solid ${BORDER}`, cursor:"pointer", background:"#fff", color:SLATE, fontSize:11, fontFamily:"'DM Sans',sans-serif" }}><ErasIcon/>{t.clear}</button>
         </div>
       </div>
-      {/* Canvas */}
+
       <div style={{ position:"relative", borderRadius:8, overflow:"hidden", border:`1.5px solid ${BORDER}` }}>
         <img ref={imgRef} src={screenshotData} alt="" style={{ display:"none" }} onLoad={()=>redrawAll()}/>
-        <canvas ref={canvasRef} width={680} height={310} style={{ display:"block", width:"100%", touchAction:"none", cursor:"crosshair" }}
+        <canvas ref={canvasRef} width={680} height={310}
+          style={{ display:"block", width:"100%", touchAction:"none", cursor: tool==="text" ? "text" : "crosshair" }}
           onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp}
-          onTouchStart={onDown} onTouchMove={onMove} onTouchEnd={onUp}/>
-        {strokes.length===0&&(
+          onTouchStart={onDown} onTouchMove={onMove} onTouchEnd={onUp}
+          onClick={onCanvasClick}/>
+
+        {textInput && (()=>{
+          const { scaleX, scaleY } = getCanvasScale();
+          return (
+            <input
+              ref={inputRef}
+              onChange={e => { textValue.current = e.target.value; }}
+              onKeyDown={e => {
+                if (e.key === "Enter") { e.preventDefault(); commitText(); }
+                if (e.key === "Escape") { setTextInput(null); textValue.current = ""; }
+              }}
+              onBlur={commitText}
+              placeholder={lang==="en" ? "Type, then Enter..." : "Escribe, luego Enter..."}
+              style={{
+                position:"absolute",
+                left: textInput.x * scaleX,
+                top: Math.max(0, textInput.y * scaleY - 24),
+                background:"rgba(255,255,255,0.95)",
+                border:`2px solid ${color}`,
+                borderRadius:4, padding:"3px 7px",
+                fontSize:15, fontWeight:700,
+                color, fontFamily:"'DM Sans',sans-serif",
+                outline:"none", minWidth:100, maxWidth:260,
+                boxShadow:"0 2px 10px rgba(0,0,0,0.18)",
+              }}
+            />
+          );
+        })()}
+
+        {strokes.length===0&&!textInput&&(
           <div style={{ position:"absolute", inset:0, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", pointerEvents:"none", gap:5 }}>
             <div style={{ color:"#aaa", fontSize:12, fontWeight:500, fontFamily:"'DM Sans',sans-serif" }}>{t.annotateHint}</div>
             <div style={{ color:"#ccc", fontSize:11, fontFamily:"'DM Sans',sans-serif" }}>{t.annotateSubHint}</div>
@@ -363,14 +501,16 @@ export default function App() {
 
   useEffect(()=>{
     (async()=>{
-      try {
-        setStatusMsg({ kind:"info", text:t.connecting });
-        const s=await createSession("Demo App","Test Client");
-        setSessionId(s.id);
+      // Read session ID from URL param e.g. ?session=abc123
+      const params = new URLSearchParams(window.location.search);
+      const sid = params.get("session");
+      if (sid) {
+        setSessionId(sid);
         setStatusMsg({ kind:"ok", text:t.connected });
         setTimeout(()=>setStatusMsg(null),2500);
-      } catch {
-        setStatusMsg({ kind:"warn", text:t.offline });
+      } else {
+        // No session param — show offline/unlinked warning
+        setStatusMsg({ kind:"warn", text: lang==="en" ? "No session — use a session link" : "Sin sesión — usa un enlace de sesión" });
       }
     })();
   },[]);
@@ -388,16 +528,25 @@ export default function App() {
     if(!message.trim()) return;
     setSaving(true);
     const meta=harvestMeta(page);
-    const local={ id:Date.now(), type, message:message.trim(), repro:repro.trim(), severity:type==="bug"?severity:null, meta, screenshot:annotated||screenshot, hasAnnotation:!!annotated };
+    const imgData = annotated || screenshot;
+    const local={ id:Date.now(), type, message:message.trim(), repro:repro.trim(), severity:type==="bug"?severity:null, meta, screenshot:imgData, hasAnnotation:!!annotated };
     setItems(p=>[...p,local]);
     setStep("success");
     if(sessionId){
       try {
         const iid=`item_${Date.now()}`;
-        let url=null;
-        try{ url=await uploadScreenshot(sessionId,iid,local.screenshot); }catch{}
-        await saveItem(sessionId,{...local,screenshotUrl:url});
-      } catch{}
+        let screenshotUrl=null;
+        if(imgData){
+          try{
+            screenshotUrl=await uploadScreenshot(sessionId,iid,imgData);
+          }catch(uploadErr){
+            console.warn("Screenshot upload failed:",uploadErr.message);
+          }
+        }
+        await saveItem(sessionId,{...local,screenshotUrl});
+      } catch(err){
+        console.error("Failed to save nota:",err.message);
+      }
     }
     setSaving(false);
     setTimeout(()=>setOpen(false),2200);

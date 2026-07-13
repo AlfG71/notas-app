@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { fetchSessions, fetchSessionItems, closeSession, signOut, clearSession } from "./supabase.js";
+import { fetchSessions, fetchSessionItems, closeSession, signOut, clearSession, sbFetch } from "./supabase.js";
 
 const INK = "#1C1917", PAPER = "#F5F0E8", RED = "#E8562A", GREEN = "#2D6A4F";
 const BORDER = "#E2D9CC", LIGHT = "#FFF8F0", SLATE = "#64748b";
@@ -236,12 +236,133 @@ function SessionCard({ session, token, onStatusChange }) {
   );
 }
 
+// ─── New Session Modal ────────────────────────────────────────────────────────
+function NewSessionModal({ token, onClose, onCreated }) {
+  const [clientName, setClientName] = useState("");
+  const [appName, setAppName]       = useState("");
+  const [creating, setCreating]     = useState(false);
+  const [result, setResult]         = useState(null);
+  const [focusedField, setFocused]  = useState(null);
+
+  async function handleCreate() {
+    if (!clientName.trim() || !appName.trim()) return;
+    setCreating(true);
+    try {
+      const data = await sbFetch("/feedback_sessions", {
+        method: "POST",
+        body: JSON.stringify({ app_name: appName.trim(), client_name: clientName.trim(), status: "active" }),
+      }, token);
+      const session = data[0];
+      const url = `${window.location.origin}?session=${session.id}`;
+      setResult({ url, sessionId: session.id });
+      onCreated();
+    } catch (e) { alert("Failed to create session: " + e.message); }
+    finally { setCreating(false); }
+  }
+
+  function copyUrl() {
+    navigator.clipboard.writeText(result.url);
+  }
+
+  const inputStyle = (field) => ({
+    width:"100%", padding:"10px 12px", borderRadius:8,
+    border:`1.5px solid ${focusedField===field ? RED : BORDER}`,
+    fontFamily:"'DM Sans',sans-serif", fontSize:14, color:INK,
+    outline:"none", boxSizing:"border-box", background:LIGHT,
+    transition:"border-color 0.15s",
+  });
+
+  const canCreate = clientName.trim() && appName.trim() && !creating;
+
+  return (
+    <div style={{ position:"fixed", inset:0, zIndex:3000, display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
+      {/* Backdrop — pointer-events only on the backdrop itself, not the modal */}
+      <div onClick={onClose} style={{ position:"absolute", inset:0, background:"rgba(28,25,23,0.55)", backdropFilter:"blur(4px)", zIndex:0 }}/>
+      <div style={{ position:"relative", width:"100%", maxWidth:460, borderRadius:14, overflow:"hidden", boxShadow:"0 24px 64px rgba(28,25,23,0.3)", background:"#fff", zIndex:1 }}>
+        <div style={{ background:INK, padding:"16px 20px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+          <div>
+            <div style={{ color:PAPER, fontWeight:600, fontSize:15, fontFamily:"'Fraunces',Georgia,serif" }}>New session</div>
+            <div style={{ color:"#8C8279", fontSize:11, marginTop:2 }}>Creates a unique link to send to your client</div>
+          </div>
+          <button onClick={onClose} style={{ background:"rgba(255,255,255,0.08)", border:"none", borderRadius:6, width:26, height:26, cursor:"pointer", color:"#8C8279", display:"flex", alignItems:"center", justifyContent:"center", fontSize:14 }}>✕</button>
+        </div>
+
+        <div style={{ padding:20 }}>
+          {!result ? (
+            <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
+              <div>
+                <label style={{ fontSize:12, fontWeight:500, color:SLATE, display:"block", marginBottom:5 }}>Client name</label>
+                <input
+                  type="text"
+                  value={clientName}
+                  onChange={e => setClientName(e.target.value)}
+                  onFocus={() => setFocused("client")}
+                  onBlur={() => setFocused(null)}
+                  placeholder="e.g. Rosa Mendez"
+                  style={inputStyle("client")}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize:12, fontWeight:500, color:SLATE, display:"block", marginBottom:5 }}>App name</label>
+                <input
+                  type="text"
+                  value={appName}
+                  onChange={e => setAppName(e.target.value)}
+                  onFocus={() => setFocused("app")}
+                  onBlur={() => setFocused(null)}
+                  onKeyDown={e => e.key === "Enter" && handleCreate()}
+                  placeholder="e.g. Restaurant POS"
+                  style={inputStyle("app")}
+                />
+              </div>
+              <button onClick={handleCreate} disabled={!canCreate}
+                style={{ width:"100%", padding:"11px 0", borderRadius:9, border:"none",
+                  cursor: canCreate ? "pointer" : "not-allowed",
+                  background: canCreate ? INK : "#e8e0d6",
+                  color: canCreate ? PAPER : "#aaa",
+                  fontSize:13, fontWeight:600, fontFamily:"'DM Sans',sans-serif",
+                  position:"relative", overflow:"hidden", transition:"all 0.2s" }}>
+                {canCreate && <div style={{ position:"absolute", left:0, top:0, bottom:0, width:4, background:RED }}/>}
+                <span style={{ marginLeft: canCreate ? 6 : 0 }}>{creating ? "Creating..." : "Create session →"}</span>
+              </button>
+            </div>
+          ) : (
+            <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
+              <div style={{ textAlign:"center", padding:"8px 0" }}>
+                <div style={{ width:44, height:44, borderRadius:"50%", background:GREEN, display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 10px", color:"#fff", fontSize:20 }}>✓</div>
+                <div style={{ fontWeight:700, fontSize:15, color:INK, fontFamily:"'Fraunces',Georgia,serif" }}>Session created!</div>
+                <div style={{ fontSize:12, color:SLATE, marginTop:4 }}>Copy this link and send it to your client</div>
+              </div>
+              <div style={{ background:LIGHT, borderRadius:9, border:`1.5px solid ${BORDER}`, padding:"10px 14px" }}>
+                <div style={{ fontSize:11, color:SLATE, marginBottom:4, fontWeight:500 }}>Session URL</div>
+                <div style={{ fontFamily:"'DM Mono',monospace", fontSize:11, color:INK, wordBreak:"break-all", lineHeight:1.5 }}>{result.url}</div>
+              </div>
+              <div style={{ display:"flex", gap:8 }}>
+                <button onClick={copyUrl}
+                  style={{ flex:2, padding:"10px 0", borderRadius:8, border:"none", background:INK, cursor:"pointer", fontFamily:"'DM Sans',sans-serif", fontSize:13, fontWeight:600, color:PAPER, position:"relative", overflow:"hidden" }}>
+                  <div style={{ position:"absolute", left:0, top:0, bottom:0, width:4, background:RED }}/>
+                  <span style={{ marginLeft:6 }}>Copy link</span>
+                </button>
+                <button onClick={onClose}
+                  style={{ flex:1, padding:"10px 0", borderRadius:8, border:`1.5px solid ${BORDER}`, background:"#fff", cursor:"pointer", fontFamily:"'DM Sans',sans-serif", fontSize:13, fontWeight:600, color:SLATE }}>
+                  Done
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 export default function Dashboard({ authSession, onLogout }) {
-  const [sessions, setSessions] = useState(null);
-  const [loading, setLoading]   = useState(true);
-  const [error, setError]       = useState(null);
-  const [filter, setFilter]     = useState("all"); // all | active | closed
+  const [sessions, setSessions]     = useState(null);
+  const [loading, setLoading]       = useState(true);
+  const [error, setError]           = useState(null);
+  const [filter, setFilter]         = useState("all");
+  const [showNewSession, setShowNewSession] = useState(false);
   const token = authSession?.access_token;
 
   async function load() {
@@ -269,6 +390,7 @@ export default function Dashboard({ authSession, onLogout }) {
 
   return (
     <div style={{ minHeight:"100vh", background:PAPER, fontFamily:"'DM Sans',sans-serif" }}>
+      {showNewSession && <NewSessionModal token={token} onClose={()=>setShowNewSession(false)} onCreated={load}/>}
       <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 
       {/* Header */}
@@ -279,6 +401,10 @@ export default function Dashboard({ authSession, onLogout }) {
           <button onClick={load}
             style={{ display:"flex", alignItems:"center", gap:5, padding:"5px 10px", borderRadius:6, border:"1px solid rgba(255,255,255,0.12)", background:"transparent", cursor:"pointer", color:"#8C8279", fontSize:12, fontFamily:"'DM Sans',sans-serif" }}>
             <RefreshIcon/> Refresh
+          </button>
+          <button onClick={()=>setShowNewSession(true)}
+            style={{ display:"flex", alignItems:"center", gap:5, padding:"5px 14px", borderRadius:6, border:"none", background:RED, cursor:"pointer", color:"#fff", fontSize:12, fontWeight:600, fontFamily:"'DM Sans',sans-serif" }}>
+            + New session
           </button>
           <button onClick={handleLogout}
             style={{ display:"flex", alignItems:"center", gap:5, padding:"5px 10px", borderRadius:6, border:"1px solid rgba(255,255,255,0.12)", background:"transparent", cursor:"pointer", color:"#8C8279", fontSize:12, fontFamily:"'DM Sans',sans-serif" }}>
