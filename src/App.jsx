@@ -148,14 +148,7 @@ const T = {
   },
 };
 
-// ─── DEMO PAGES ───────────────────────────────────────────────────────────────
-const PAGES = [
-  { id:"dashboard",    label:"Dashboard",     labelEs:"Panel",         content:"Sales overview, KPIs, and recent orders.",          contentEs:"Ventas, KPIs y pedidos recientes.",       hasError:false },
-  { id:"menu",         label:"Menu Manager",  labelEs:"Menú",          content:"Edit items, pricing, and availability.",            contentEs:"Edita platillos, precios y disponibilidad.", hasError:false },
-  { id:"reservations", label:"Reservations",  labelEs:"Reservaciones", content:"Manage bookings, walk-ins, and table assignments.", contentEs:"Reservas, llegadas y mesas.",              hasError:true  },
-];
-
-function harvestMeta(page) {
+function harvestMeta() {
   // Detect real browser from user agent
   const ua = navigator.userAgent;
   let browser = "Unknown";
@@ -174,14 +167,14 @@ function harvestMeta(page) {
   else if (ua.includes("Android")) os = "Android";
 
   return {
-    page: page.label,
+    page: document.title || window.location.pathname,
     url: window.location.href,
     timestamp: new Date().toISOString(),
     browser,
     os,
     viewport: `${window.innerWidth}×${window.innerHeight}`,
-    consoleErrors: page.hasError ? ["TypeError: Cannot read properties of undefined (reading 'date')"] : [],
-    networkErrors: page.hasError ? ["GET /api/reservations/upcoming 500"] : [],
+    consoleErrors: [],
+    networkErrors: [],
   };
 }
 
@@ -458,30 +451,9 @@ function AnnotationCanvas({ screenshotData, onAnnotated, lang }) {
   );
 }
 
-// ─── SCREENSHOT GENERATOR ────────────────────────────────────────────────────
-function genScreenshot(page, lang) {
-  const cv=document.createElement("canvas"); cv.width=680; cv.height=310;
-  const ctx=cv.getContext("2d");
-  ctx.fillStyle=PAPER; ctx.fillRect(0,0,680,310);
-  ctx.fillStyle=INK; ctx.fillRect(0,0,680,44);
-  ctx.fillStyle=PAPER; ctx.font="500 12px system-ui";
-  ctx.fillText(`notas · ${lang==="es"?page.labelEs:page.label}`,16,26);
-  ctx.fillStyle="#fff"; ctx.roundRect(18,58,644,228,10); ctx.fill();
-  ctx.strokeStyle=BORDER; ctx.lineWidth=1; ctx.stroke();
-  ctx.fillStyle="#aaa"; ctx.font="10px monospace"; ctx.fillText(`demo-app.local/${page.id}`,32,84);
-  ctx.fillStyle=INK; ctx.font="600 17px system-ui"; ctx.fillText(lang==="es"?page.labelEs:page.label,32,110);
-  ctx.fillStyle=SLATE; ctx.font="13px system-ui";
-  const words=(lang==="es"?page.contentEs:page.content).split(" "); let line="",y=135;
-  words.forEach(w=>{ const test=line+w+" "; if(ctx.measureText(test).width>580&&line){ctx.fillText(line,32,y);line=w+" ";y+=21;}else line=test;}); ctx.fillText(line,32,y);
-  [75,52,65].forEach((w,i)=>{ ctx.fillStyle="#EEE8DF"; ctx.roundRect(32,180+i*15,w*4.2,8,4); ctx.fill(); });
-  if(page.hasError){ ctx.fillStyle="#FEF2F0"; ctx.roundRect(32,240,380,24,5); ctx.fill(); ctx.fillStyle="#C0392B"; ctx.font="10px monospace"; ctx.fillText("⚠  TypeError: Cannot read properties of undefined",42,257); }
-  return cv.toDataURL("image/png");
-}
-
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 export default function App() {
   const [lang, setLang]           = useState("en");
-  const [page, setPage]           = useState(PAGES[0]);
   const [open, setOpen]           = useState(false);
   const [step, setStep]           = useState("type");
   const [type, setType]           = useState(null);
@@ -492,42 +464,45 @@ export default function App() {
   const [screenshot, setScreenshot] = useState(null);
   const [items, setItems]         = useState([]);
   const [report, setReport]       = useState(false);
-  const [pulse, setPulse]         = useState(false);
   const [sessionId, setSessionId] = useState(null);
   const [saving, setSaving]       = useState(false);
-  const [statusMsg, setStatusMsg] = useState(null);
   const txtRef = useRef(null);
   const t = T[lang];
 
   useEffect(()=>{
     (async()=>{
-      // Read session ID from URL param e.g. ?session=abc123
       const params = new URLSearchParams(window.location.search);
       const sid = params.get("session");
       if (sid) {
         setSessionId(sid);
-        setStatusMsg({ kind:"ok", text:t.connected });
-        setTimeout(()=>setStatusMsg(null),2500);
-      } else {
-        // No session param — show offline/unlinked warning
-        setStatusMsg({ kind:"warn", text: lang==="en" ? "No session — use a session link" : "Sin sesión — usa un enlace de sesión" });
       }
     })();
   },[]);
 
-  useEffect(()=>{ setPulse(true); const id=setTimeout(()=>setPulse(false),1400); return()=>clearTimeout(id); },[page]);
   useEffect(()=>{ if(step==="describe"&&txtRef.current) txtRef.current.focus(); },[step]);
 
   function openWidget() {
     setOpen(true); setStep("type"); setType(null);
     setMessage(""); setRepro(""); setSeverity("medium"); setAnnotated(null);
-    setScreenshot(genScreenshot(page,lang));
+    // Generate a simple screenshot of the current page
+    const cv = document.createElement("canvas");
+    cv.width = 680; cv.height = 310;
+    const ctx = cv.getContext("2d");
+    ctx.fillStyle = PAPER; ctx.fillRect(0,0,680,310);
+    ctx.fillStyle = INK; ctx.fillRect(0,0,680,44);
+    ctx.fillStyle = PAPER; ctx.font = "500 12px system-ui";
+    ctx.fillText(`notas · ${window.location.href}`, 16, 26);
+    ctx.fillStyle = "#fff"; ctx.roundRect(18,58,644,228,10); ctx.fill();
+    ctx.strokeStyle = BORDER; ctx.lineWidth = 1; ctx.stroke();
+    ctx.fillStyle = "#aaa"; ctx.font = "11px system-ui";
+    ctx.fillText(lang==="en" ? "Use the tools above to mark what you want to report" : "Usa las herramientas de arriba para marcar lo que quieres reportar", 32, 180);
+    setScreenshot(cv.toDataURL("image/png"));
   }
 
   async function submit() {
     if(!message.trim()) return;
     setSaving(true);
-    const meta=harvestMeta(page);
+    const meta=harvestMeta();
     const imgData = annotated || screenshot;
     const local={ id:Date.now(), type, message:message.trim(), repro:repro.trim(), severity:type==="bug"?severity:null, meta, screenshot:imgData, hasAnnotation:!!annotated };
     setItems(p=>[...p,local]);
@@ -568,64 +543,74 @@ export default function App() {
       {/* ── HEADER ── */}
       <header style={{ background:INK, padding:"0 20px", height:50, display:"flex", alignItems:"center", justifyContent:"space-between", boxShadow:"0 2px 12px rgba(0,0,0,0.3)", flexShrink:0 }}>
         <NotasLogo size="md" inverted/>
-        <div style={{ display:"flex", gap:2 }}>
-          {PAGES.map(p=>(
-            <button key={p.id} onClick={()=>setPage(p)}
-              style={{ padding:"4px 12px", borderRadius:5, border:"none", cursor:"pointer", fontSize:12, fontWeight:500, fontFamily:"'DM Sans',sans-serif", display:"flex", alignItems:"center", gap:5, transition:"all 0.15s",
-                background:page.id===p.id?"rgba(232,86,42,0.2)":"transparent",
-                color:page.id===p.id?"#F5B8A0":"#8C8279" }}>
-              {p.hasError&&<span style={{ width:5,height:5,borderRadius:"50%",background:RED,display:"inline-block" }}/>}
-              {lang==="es"?p.labelEs:p.label}
-            </button>
-          ))}
-        </div>
         <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-          {statusMsg&&(
-            <div style={{ display:"flex", alignItems:"center", gap:4, padding:"3px 9px", borderRadius:20, background:statusColors[statusMsg.kind]?.bg, color:statusColors[statusMsg.kind]?.c, fontSize:10, fontWeight:500 }}>
-              {statusMsg.kind==="info"&&<Spinner/>}{statusMsg.text}
-            </div>
-          )}
           <LangToggle lang={lang} setLang={setLang} inverted/>
-          <button onClick={()=>setReport(true)} disabled={items.length===0}
-            style={{ display:"flex", alignItems:"center", gap:5, padding:"5px 12px", borderRadius:6, border:"none", cursor:items.length?"pointer":"not-allowed",
-              background:items.length?RED:"rgba(255,255,255,0.07)",
-              color:items.length?"#fff":"#4a4540", fontSize:12, fontWeight:600, fontFamily:"'DM Sans',sans-serif", transition:"all 0.2s" }}>
-            <ReportIc/>{t.reportBtn(items.length)}
-          </button>
+          {items.length > 0 && (
+            <button onClick={()=>setReport(true)}
+              style={{ display:"flex", alignItems:"center", gap:5, padding:"5px 12px", borderRadius:6, border:"none", cursor:"pointer",
+                background:RED, color:"#fff", fontSize:12, fontWeight:600, fontFamily:"'DM Sans',sans-serif" }}>
+              <ReportIc/>{t.reportBtn(items.length)}
+            </button>
+          )}
         </div>
       </header>
 
-      {/* ── DEMO APP CONTENT ── */}
+      {/* ── LANDING CONTENT ── */}
       <main style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", padding:28 }}>
-        <div style={{ background:"#fff", borderRadius:14, padding:36, width:"100%", maxWidth:580, boxShadow:`0 4px 24px rgba(28,25,23,0.07)`, border:`1px solid ${BORDER}` }}>
-          <div style={{ fontSize:10, fontFamily:"'DM Mono',monospace", color:"#aaa", letterSpacing:"0.1em", marginBottom:5, textTransform:"uppercase" }}>
-            {page.id} · demo-app.local/{page.id}
-          </div>
-          <h2 style={{ margin:"0 0 8px", fontSize:20, fontWeight:600, color:INK, fontFamily:"'Fraunces',Georgia,serif" }}>{lang==="es"?page.labelEs:page.label}</h2>
-          <p style={{ color:SLATE, lineHeight:1.7, margin:"0 0 20px", fontSize:14 }}>{lang==="es"?page.contentEs:page.content}</p>
-          <div style={{ display:"flex", flexDirection:"column", gap:7 }}>
-            {[80,55,70].map((w,i)=><div key={i} style={{ height:9, borderRadius:4, background:PAPER, width:`${w}%` }}/>)}
-            <div style={{ height:32, borderRadius:7, background:LIGHT, border:`1px dashed ${BORDER}`, marginTop:4 }}/>
-          </div>
-          {page.hasError&&(
-            <div style={{ marginTop:14, padding:"9px 13px", borderRadius:6, background:"#FEF2F0", border:"1px solid #FADBD8", fontSize:11, color:"#C0392B", fontFamily:"'DM Mono',monospace" }}>
-              ⚠ TypeError: Cannot read properties of undefined (reading 'date')
+        {sessionId ? (
+          /* Has a valid session — ready to test */
+          <div style={{ textAlign:"center", maxWidth:480 }}>
+            <div style={{ width:64, height:64, borderRadius:16, background:INK, display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 24px" }}>
+              <svg width="36" height="36" viewBox="0 0 18 18" fill="none">
+                <path d="M3 14V4l5 6V4M13 4v10" stroke={PAPER} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M11 13l4-3" stroke={RED} strokeWidth="2" strokeLinecap="round"/>
+              </svg>
             </div>
-          )}
-        </div>
+            <h1 style={{ fontFamily:"'Fraunces',Georgia,serif", fontSize:28, fontWeight:700, color:INK, margin:"0 0 12px", letterSpacing:"-0.02em" }}>
+              {lang==="en" ? "You're all set." : "Todo listo."}
+            </h1>
+            <p style={{ fontSize:15, color:SLATE, lineHeight:1.7, margin:"0 0 8px" }}>
+              {lang==="en"
+                ? "Go ahead and explore the app. Whenever you spot something — a bug, a thought, or an idea — tap the button in the corner to leave a nota."
+                : "Explora la aplicación. Cuando encuentres algo — un error, un comentario o una idea — toca el botón en la esquina para dejar una nota."}
+            </p>
+            <p style={{ fontSize:13, color:"#aaa", lineHeight:1.6, margin:0 }}>
+              {lang==="en"
+                ? "Your notas are saved automatically. When you're done testing, open your notas to review everything."
+                : "Tus notas se guardan automáticamente. Cuando termines, ábrelas para revisar todo."}
+            </p>
+            {items.length > 0 && (
+              <div style={{ marginTop:20, display:"inline-flex", alignItems:"center", gap:6, padding:"6px 14px", borderRadius:20, background:GREEN+"15", border:`1px solid ${GREEN}30`, color:GREEN, fontSize:13, fontWeight:600 }}>
+                ✓ {t.sessionItems(items.length)}
+              </div>
+            )}
+          </div>
+        ) : (
+          /* No session param — show helpful error */
+          <div style={{ textAlign:"center", maxWidth:420 }}>
+            <div style={{ width:56, height:56, borderRadius:14, background:"#FEF2F0", border:`1.5px solid #FADBD8`, display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 20px", fontSize:24 }}>
+              🔗
+            </div>
+            <h2 style={{ fontFamily:"'Fraunces',Georgia,serif", fontSize:22, fontWeight:700, color:INK, margin:"0 0 10px" }}>
+              {lang==="en" ? "No session link found" : "No se encontró un enlace de sesión"}
+            </h2>
+            <p style={{ fontSize:14, color:SLATE, lineHeight:1.7, margin:0 }}>
+              {lang==="en"
+                ? "You need a session link from your developer to use Notas. Check your email or message thread for a link that looks like notas-app-fawn.vercel.app?session=..."
+                : "Necesitas un enlace de sesión de tu desarrollador para usar Notas. Revisa tu correo o mensajes para encontrar un enlace que diga notas-app-fawn.vercel.app?session=..."}
+            </p>
+          </div>
+        )}
       </main>
 
       {/* ── TRIGGER BUTTON ── */}
-      {!open&&(
+      {!open && sessionId && (
         <div style={{ position:"fixed", bottom:24, right:24, zIndex:900 }}>
-          {/* Paper corner-fold nota button */}
           <button onClick={openWidget}
             style={{ display:"flex", alignItems:"center", gap:8, padding:"11px 20px", borderRadius:10, border:"none", cursor:"pointer",
               background:INK, color:PAPER, fontSize:13, fontWeight:600, fontFamily:"'DM Sans',sans-serif",
-              boxShadow:pulse?`0 0 0 10px rgba(28,25,23,0.08),0 8px 28px rgba(28,25,23,0.35)`:"0 6px 20px rgba(28,25,23,0.3)",
-              transition:"box-shadow 0.5s,transform 0.15s", transform:pulse?"scale(1.04)":"scale(1)",
+              boxShadow:"0 6px 20px rgba(28,25,23,0.3)",
               position:"relative", overflow:"hidden" }}>
-            {/* Red pen accent stripe */}
             <div style={{ position:"absolute", left:0, top:0, bottom:0, width:4, background:RED, borderRadius:"10px 0 0 10px" }}/>
             <span style={{ marginLeft:6, display:"flex", alignItems:"center", gap:7 }}>
               <ChatIcon/>{t.trigger}
@@ -648,7 +633,7 @@ export default function App() {
                 <div>
                   <NotasLogo size="sm" inverted/>
                   <div style={{ color:"#8C8279", fontSize:10, marginTop:4, fontFamily:"'DM Mono',monospace" }}>
-                    {lang==="es"?page.labelEs:page.label} · {new Date().toLocaleTimeString()}
+                    {new Date().toLocaleTimeString()}
                   </div>
                 </div>
                 <div style={{ display:"flex", alignItems:"center", gap:7 }}>
@@ -770,8 +755,8 @@ export default function App() {
                   <div style={{ background:LIGHT, borderRadius:7, padding:"7px 11px", border:`1px solid ${BORDER}` }}>
                     <div style={{ fontSize:10,fontWeight:600,color:"#bbb",letterSpacing:"0.07em",textTransform:"uppercase",marginBottom:4 }}>📎 {t.autoCapture}</div>
                     <div style={{ display:"flex", flexWrap:"wrap", gap:"3px 12px" }}>
-                      {[["Page",lang==="es"?page.labelEs:page.label],["Browser","Chrome 124"],["Screenshot",annotated?"✓ "+t.annotated:"✓"],...(page.hasError?[["Errors","1 ⚠"]]:[] )].map(([k,v])=>(
-                        <span key={k} style={{ fontSize:11,color:SLATE }}><span style={{ color:"#bbb" }}>{k}: </span><span style={{ fontFamily:"'DM Mono',monospace",fontSize:10,color:k==="Errors"?"#C0392B":SLATE }}>{v}</span></span>
+                      {[["URL", window.location.pathname], ["Screenshot", annotated ? "✓ "+t.annotated : "✓"]].map(([k,v])=>(
+                        <span key={k} style={{ fontSize:11,color:SLATE }}><span style={{ color:"#bbb" }}>{k}: </span><span style={{ fontFamily:"'DM Mono',monospace",fontSize:10,color:SLATE }}>{v}</span></span>
                       ))}
                     </div>
                   </div>
