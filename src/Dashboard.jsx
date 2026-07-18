@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
-import { fetchSessions, fetchSessionItems, closeSession, signOut, clearSession, sbFetch } from "./supabase.js";
+import { fetchSessions, fetchSessionItems, closeSession, signOut, clearSession, sbFetch, archiveSession, unarchiveSession, deleteSession } from "./supabase.js";
 
 const INK = "#1C1917", PAPER = "#F5F0E8", RED = "#E8562A", GREEN = "#2D6A4F";
 const BORDER = "#E2D9CC", LIGHT = "#FFF8F0", SLATE = "#64748b";
+const ARCHIVED_BG = "#F8F6F3";
 
 const TYPE_CFG = {
   bug:      { color:"#C0392B", light:"#FEF2F0", border:"#FADBD8", label:"Bug"      },
@@ -16,13 +17,16 @@ const SEV_COLOR = { low:"#22C55E", medium:"#F59E0B", high:RED };
 const Svg = ({ children, s=18 }) => (
   <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{children}</svg>
 );
-const BugIcon  = () => <Svg s={14}><path d="M8 2l1.5 1.5M16 2l-1.5 1.5M12 8c-3.3 0-6 2.7-6 6v2c0 3.3 2.7 6 6 6s6-2.7 6-6v-2c0-3.3-2.7-6-6-6z"/><path d="M6 13H2M22 13h-4M6 17l-3 2M18 17l3 2"/></Svg>;
-const ChatIcon = () => <Svg s={14}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></Svg>;
-const BulbIcon = () => <Svg s={14}><path d="M9 21h6M12 2a7 7 0 0 1 7 7c0 2.4-1.2 4.5-3 5.7V17a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1v-2.3C6.2 13.5 5 11.4 5 9a7 7 0 0 1 7-7z"/></Svg>;
-const CheckIcon = () => <Svg s={14}><path d="M20 6L9 17l-5-5"/></Svg>;
-const LogoutIcon = () => <Svg s={14}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></Svg>;
+const BugIcon     = () => <Svg s={14}><path d="M8 2l1.5 1.5M16 2l-1.5 1.5M12 8c-3.3 0-6 2.7-6 6v2c0 3.3 2.7 6 6 6s6-2.7 6-6v-2c0-3.3-2.7-6-6-6z"/><path d="M6 13H2M22 13h-4M6 17l-3 2M18 17l3 2"/></Svg>;
+const ChatIcon    = () => <Svg s={14}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></Svg>;
+const BulbIcon    = () => <Svg s={14}><path d="M9 21h6M12 2a7 7 0 0 1 7 7c0 2.4-1.2 4.5-3 5.7V17a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1v-2.3C6.2 13.5 5 11.4 5 9a7 7 0 0 1 7-7z"/></Svg>;
+const CheckIcon   = () => <Svg s={14}><path d="M20 6L9 17l-5-5"/></Svg>;
+const LogoutIcon  = () => <Svg s={14}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></Svg>;
 const ChevronIcon = ({ open }) => <Svg s={16}><path d={open ? "M18 15l-6-6-6 6" : "M6 9l6 6 6-6"}/></Svg>;
 const RefreshIcon = () => <Svg s={14}><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></Svg>;
+const ArchiveIcon = () => <Svg s={14}><path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/></Svg>;
+const UnarchiveIcon = () => <Svg s={14}><path d="M21 8v13H3V8M1 3h22v5H1zM12 12v4M10 14l2-2 2 2"/></Svg>;
+const TrashIcon   = () => <Svg s={14}><path d="M3 6h18M19 6l-1 14H6L5 6M10 11v6M14 11v6M9 6V4h6v2"/></Svg>;
 
 function NotasLogo() {
   return (
@@ -41,11 +45,16 @@ function NotasLogo() {
 
 // ─── Session card ─────────────────────────────────────────────────────────────
 function SessionCard({ session, token, onStatusChange }) {
-  const [open, setOpen]   = useState(false);
-  const [items, setItems] = useState(null);
+  const [open, setOpen]       = useState(false);
+  const [items, setItems]     = useState(null);
   const [loading, setLoading] = useState(false);
   const [closing, setClosing] = useState(false);
-  const [selectedItem, setSelectedItem] = useState(null);
+  const [archiving, setArchiving] = useState(false);
+  const [deleting, setDeleting]   = useState(false);
+
+  const isActive   = session.status === "active";
+  const isArchived = session.status === "archived";
+  const isClosed   = session.status === "closed";
 
   async function loadItems() {
     if (items) { setOpen(o=>!o); return; }
@@ -64,6 +73,28 @@ function SessionCard({ session, token, onStatusChange }) {
     try { await closeSession(session.id, token); onStatusChange(); }
     catch { alert("Failed to close session"); }
     finally { setClosing(false); }
+  }
+
+  async function handleArchive() {
+    setArchiving(true);
+    try { await archiveSession(session.id, token); onStatusChange(); }
+    catch { alert("Failed to archive session"); }
+    finally { setArchiving(false); }
+  }
+
+  async function handleUnarchive() {
+    setArchiving(true);
+    try { await unarchiveSession(session.id, token); onStatusChange(); }
+    catch { alert("Failed to unarchive session"); }
+    finally { setArchiving(false); }
+  }
+
+  async function handleDelete() {
+    if (!confirm(`Permanently delete this session for ${session.client_name || "this client"}? This cannot be undone.`)) return;
+    setDeleting(true);
+    try { await deleteSession(session.id, token); onStatusChange(); }
+    catch { alert("Failed to delete session"); }
+    finally { setDeleting(false); }
   }
 
   function generateReport() {
@@ -95,7 +126,6 @@ function SessionCard({ session, token, onStatusChange }) {
         item.meta?.consoleErrors?.length ? `Errors:  ${item.meta.consoleErrors.join("; ")}` : null,
       ].filter(Boolean).join("\n")),
     ].join("\n");
-
     const blob = new Blob([lines], { type:"text/plain" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -111,47 +141,70 @@ function SessionCard({ session, token, onStatusChange }) {
     a.click(); URL.revokeObjectURL(url);
   }
 
-  const bugs     = items ? items.filter(i=>i.type==="bug").length : session.bugs || 0;
+  const bugs     = items ? items.filter(i=>i.type==="bug").length : 0;
   const feedback = items ? items.filter(i=>i.type==="feedback").length : 0;
   const ideas    = items ? items.filter(i=>i.type==="idea").length : 0;
-  const isActive = session.status === "active";
+
+  // Visual treatment per status
+  const cardBg     = isArchived ? ARCHIVED_BG : "#fff";
+  const cardBorder = open ? RED+"40" : isArchived ? "#D4CFC9" : BORDER;
+  const textColor  = isArchived ? "#999" : INK;
+  const subColor   = isArchived ? "#bbb" : SLATE;
+
+  const statusBadge = isActive
+    ? { bg:"#F0FDF4", color:GREEN, border:"#BBF7D0", label:"● active" }
+    : isClosed
+    ? { bg:"#F8FAFC", color:SLATE, border:BORDER, label:"✓ closed" }
+    : { bg:"#F5F0E8", color:"#999", border:"#D4CFC9", label:"◻ archived" };
 
   return (
-    <div style={{ borderRadius:12, border:`1.5px solid ${open ? RED+"40" : BORDER}`, overflow:"hidden", transition:"border-color 0.2s" }}>
+    <div style={{ borderRadius:12, border:`1.5px solid ${cardBorder}`, overflow:"hidden", transition:"all 0.2s", opacity: isArchived ? 0.75 : 1 }}>
       {/* Card header */}
-      <div style={{ padding:"14px 16px", background:"#fff", display:"flex", alignItems:"center", gap:12, cursor:"pointer" }} onClick={loadItems}>
+      <div style={{ padding:"14px 16px", background:cardBg, display:"flex", alignItems:"center", gap:12, cursor:"pointer" }} onClick={loadItems}>
         <div style={{ flex:1, minWidth:0 }}>
           <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:3 }}>
-            <div style={{ fontWeight:600, fontSize:14, color:INK }}>{session.client_name || "Unnamed client"}</div>
-            <div style={{ fontSize:11, color:SLATE }}>·</div>
-            <div style={{ fontSize:12, color:SLATE }}>{session.app_name}</div>
+            <div style={{ fontWeight:600, fontSize:14, color:textColor }}>{session.client_name || "Unnamed client"}</div>
+            <div style={{ fontSize:11, color:subColor }}>·</div>
+            <div style={{ fontSize:12, color:subColor }}>{session.app_name}</div>
             <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:6 }}>
-              <span style={{ fontSize:10, fontWeight:600, padding:"2px 8px", borderRadius:20, background:isActive?"#F0FDF4":"#F8FAFC", color:isActive?GREEN:SLATE, border:`1px solid ${isActive?"#BBF7D0":BORDER}` }}>
-                {isActive ? "● active" : "✓ closed"}
+              <span style={{ fontSize:10, fontWeight:600, padding:"2px 8px", borderRadius:20, background:statusBadge.bg, color:statusBadge.color, border:`1px solid ${statusBadge.border}` }}>
+                {statusBadge.label}
               </span>
             </div>
           </div>
           <div style={{ display:"flex", alignItems:"center", gap:14 }}>
-            <span style={{ fontSize:11, color:SLATE, fontFamily:"'DM Mono',monospace" }}>{new Date(session.created_at).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}</span>
-            <span style={{ fontSize:11, color:"#C0392B" }}>🐛 {bugs}</span>
-            <span style={{ fontSize:11, color:"#1A5276" }}>💬 {feedback}</span>
-            <span style={{ fontSize:11, color:"#5B2C6F" }}>💡 {ideas}</span>
+            <span style={{ fontSize:11, color:subColor, fontFamily:"'DM Mono',monospace" }}>{new Date(session.created_at).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}</span>
+            <span style={{ fontSize:11, color: isArchived?"#bbb":"#C0392B" }}>🐛 {bugs}</span>
+            <span style={{ fontSize:11, color: isArchived?"#bbb":"#1A5276" }}>💬 {feedback}</span>
+            <span style={{ fontSize:11, color: isArchived?"#bbb":"#5B2C6F" }}>💡 {ideas}</span>
           </div>
         </div>
-        <div style={{ color:SLATE, transition:"transform 0.2s", transform:open?"rotate(0)":"rotate(0)" }}>
-          {loading ? <span style={{ fontSize:11, color:SLATE }}>Loading...</span> : <ChevronIcon open={open}/>}
+        <div style={{ color:subColor }}>
+          {loading ? <span style={{ fontSize:11, color:subColor }}>Loading...</span> : <ChevronIcon open={open}/>}
         </div>
       </div>
 
       {/* Expanded items */}
       {open && items && (
-        <div style={{ borderTop:`1px solid ${BORDER}`, background:LIGHT }}>
+        <div style={{ borderTop:`1px solid ${BORDER}`, background: isArchived ? ARCHIVED_BG : LIGHT }}>
           {/* Action bar */}
-          <div style={{ padding:"10px 16px", display:"flex", gap:8, borderBottom:`1px solid ${BORDER}` }}>
+          <div style={{ padding:"10px 16px", display:"flex", gap:8, borderBottom:`1px solid ${BORDER}`, flexWrap:"wrap" }}>
             {isActive && (
               <button onClick={handleClose} disabled={closing}
                 style={{ display:"flex", alignItems:"center", gap:5, padding:"6px 12px", borderRadius:7, border:`1.5px solid ${GREEN}30`, background:"#F0FDF4", cursor:"pointer", fontFamily:"'DM Sans',sans-serif", fontSize:12, fontWeight:600, color:GREEN }}>
-                <CheckIcon/>{closing?"Closing...":"Close session"}
+                <CheckIcon/>{closing ? "Closing..." : "Close session"}
+              </button>
+            )}
+            {!isArchived && (
+              <button onClick={handleArchive} disabled={archiving}
+                style={{ display:"flex", alignItems:"center", gap:5, padding:"6px 12px", borderRadius:7, border:`1.5px solid ${BORDER}`, background:"#fff", cursor:"pointer", fontFamily:"'DM Sans',sans-serif", fontSize:12, fontWeight:600, color:SLATE }}>
+                <ArchiveIcon/>{archiving ? "Archiving..." : "Archive"}
+              </button>
+            )}
+            {isArchived && (
+              <button onClick={handleUnarchive} disabled={archiving}
+                style={{ display:"flex", alignItems:"center", gap:5, padding:"6px 12px", borderRadius:7, border:`1.5px solid ${BORDER}`, background:"#fff", cursor:"pointer", fontFamily:"'DM Sans',sans-serif", fontSize:12, fontWeight:600, color:SLATE }}>
+                <UnarchiveIcon/>{archiving ? "Restoring..." : "Restore"}
               </button>
             )}
             <button onClick={generateReport}
@@ -162,7 +215,12 @@ function SessionCard({ session, token, onStatusChange }) {
               style={{ display:"flex", alignItems:"center", gap:5, padding:"6px 12px", borderRadius:7, border:`1.5px solid ${BORDER}`, background:"#fff", cursor:"pointer", fontFamily:"'DM Sans',sans-serif", fontSize:12, fontWeight:600, color:SLATE }}>
               ↓ Export JSON
             </button>
-            <span style={{ marginLeft:"auto", fontSize:11, color:SLATE, alignSelf:"center", fontFamily:"'DM Mono',monospace" }}>
+            {/* Delete — right-aligned, destructive */}
+            <button onClick={handleDelete} disabled={deleting}
+              style={{ display:"flex", alignItems:"center", gap:5, padding:"6px 12px", borderRadius:7, border:`1.5px solid #FADBD8`, background:"#FEF2F0", cursor:"pointer", fontFamily:"'DM Sans',sans-serif", fontSize:12, fontWeight:600, color:"#C0392B", marginLeft:"auto" }}>
+              <TrashIcon/>{deleting ? "Deleting..." : "Delete"}
+            </button>
+            <span style={{ fontSize:11, color:SLATE, alignSelf:"center", fontFamily:"'DM Mono',monospace" }}>
               {items.length} nota{items.length!==1?"s":""}
             </span>
           </div>
@@ -385,8 +443,9 @@ export default function Dashboard({ authSession, onLogout }) {
     ? filter === "all" ? sessions : sessions.filter(s=>s.status===filter)
     : [];
 
-  const totalActive = sessions?.filter(s=>s.status==="active").length || 0;
-  const totalClosed = sessions?.filter(s=>s.status==="closed").length || 0;
+  const totalActive   = sessions?.filter(s=>s.status==="active").length || 0;
+  const totalClosed   = sessions?.filter(s=>s.status==="closed").length || 0;
+  const totalArchived = sessions?.filter(s=>s.status==="archived").length || 0;
 
   return (
     <div style={{ minHeight:"100vh", background:PAPER, fontFamily:"'DM Sans',sans-serif" }}>
@@ -415,14 +474,15 @@ export default function Dashboard({ authSession, onLogout }) {
 
       <main style={{ maxWidth:860, margin:"0 auto", padding:"28px 20px" }}>
         {/* Stats row */}
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:12, marginBottom:24 }}>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:12, marginBottom:24 }}>
           {[
-            { label:"Total sessions", value: sessions?.length ?? "—", color:INK },
-            { label:"Active",         value: totalActive,               color:GREEN },
-            { label:"Closed",         value: totalClosed,               color:SLATE },
+            { label:"Total",    value: sessions?.length ?? "—", color:INK   },
+            { label:"Active",   value: totalActive,              color:GREEN },
+            { label:"Closed",   value: totalClosed,              color:SLATE },
+            { label:"Archived", value: totalArchived,            color:"#bbb"},
           ].map(s=>(
-            <div key={s.label} style={{ background:"#fff", borderRadius:10, padding:"16px 18px", border:`1px solid ${BORDER}` }}>
-              <div style={{ fontSize:26, fontWeight:700, color:s.color, fontFamily:"'Fraunces',Georgia,serif" }}>{s.value}</div>
+            <div key={s.label} style={{ background:"#fff", borderRadius:10, padding:"14px 16px", border:`1px solid ${BORDER}` }}>
+              <div style={{ fontSize:24, fontWeight:700, color:s.color, fontFamily:"'Fraunces',Georgia,serif" }}>{s.value}</div>
               <div style={{ fontSize:12, color:SLATE, marginTop:2 }}>{s.label}</div>
             </div>
           ))}
@@ -430,7 +490,7 @@ export default function Dashboard({ authSession, onLogout }) {
 
         {/* Filter tabs */}
         <div style={{ display:"flex", gap:6, marginBottom:16 }}>
-          {["all","active","closed"].map(f=>(
+          {["all","active","closed","archived"].map(f=>(
             <button key={f} onClick={()=>setFilter(f)}
               style={{ padding:"6px 14px", borderRadius:20, border:`1.5px solid ${filter===f?RED:BORDER}`, background:filter===f?RED:"#fff", cursor:"pointer", fontFamily:"'DM Sans',sans-serif", fontSize:12, fontWeight:600, color:filter===f?"#fff":SLATE, transition:"all 0.15s", textTransform:"capitalize" }}>
               {f}

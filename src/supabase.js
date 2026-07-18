@@ -64,6 +64,27 @@ export async function closeSession(sessionId, token) {
   }, token);
 }
 
+export async function archiveSession(sessionId, token) {
+  return sbFetch(`/feedback_sessions?id=eq.${sessionId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status: "archived" }),
+  }, token);
+}
+
+export async function unarchiveSession(sessionId, token) {
+  return sbFetch(`/feedback_sessions?id=eq.${sessionId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status: "closed" }),
+  }, token);
+}
+
+export async function deleteSession(sessionId, token) {
+  // Items are deleted via cascade (on delete cascade in schema)
+  return sbFetch(`/feedback_sessions?id=eq.${sessionId}`, {
+    method: "DELETE",
+    prefer: "return=minimal",
+  }, token);
+}
 export async function createSession(appName, clientName, token) {
   const data = await sbFetch("/feedback_sessions", {
     method: "POST",
