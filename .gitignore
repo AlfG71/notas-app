@@ -1,5 +1,8 @@
 node_modules
 dist
+dist-widget
+dist-embed
+*.timestamp-*.mjs
 .env
 .env.local
 .DS_Store
