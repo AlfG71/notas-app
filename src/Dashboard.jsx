@@ -51,6 +51,7 @@ function SessionCard({ session, token, onStatusChange }) {
   const [closing, setClosing] = useState(false);
   const [archiving, setArchiving] = useState(false);
   const [deleting, setDeleting]   = useState(false);
+  const [selectedItem, setSelectedItem] = useState(null);
 
   const isActive   = session.status === "active";
   const isArchived = session.status === "archived";
