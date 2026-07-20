@@ -20,6 +20,14 @@ import { resolve } from "path";
 export default defineConfig({
   plugins: [react()],
   publicDir: false, // don't re-copy public/ (favicon etc.) into dist/embed
+  // React's production build reads process.env.NODE_ENV at module-load time.
+  // A regular `vite build` gets this replaced for free; lib-mode builds
+  // don't do it automatically, and browsers have no `process` global — so
+  // without this define, the bundle throws a ReferenceError as soon as it
+  // loads and window.Notas never gets assigned.
+  define: {
+    "process.env.NODE_ENV": JSON.stringify("production"),
+  },
   build: {
     outDir: "dist/embed",
     emptyOutDir: false,
