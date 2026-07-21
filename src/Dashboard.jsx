@@ -13,6 +13,31 @@ const TYPE_CFG = {
 
 const SEV_COLOR = { low:"#22C55E", medium:"#F59E0B", high:RED };
 
+// ─── PDF export helpers ────────────────────────────────────────────────────
+// Screenshots live at public Supabase Storage URLs — jsPDF's addImage needs
+// actual image data (dataURL/Uint8Array), not a URL, so these fetch and
+// decode each one before it goes into the PDF.
+async function loadImageAsDataURL(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
+  const blob = await res.blob();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error || new Error("FileReader failed"));
+    reader.readAsDataURL(blob);
+  });
+}
+
+function getImageDimensions(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight });
+    img.onerror = () => reject(new Error("Image failed to decode"));
+    img.src = dataUrl;
+  });
+}
+
 // ─── Icons ────────────────────────────────────────────────────────────────────
 const Svg = ({ children, s=18 }) => (
   <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{children}</svg>
@@ -52,6 +77,7 @@ function SessionCard({ session, token, onStatusChange }) {
   const [archiving, setArchiving] = useState(false);
   const [deleting, setDeleting]   = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
+  const [generatingPdf, setGeneratingPdf] = useState(false);
 
   const isActive   = session.status === "active";
   const isArchived = session.status === "archived";
@@ -98,40 +124,168 @@ function SessionCard({ session, token, onStatusChange }) {
     finally { setDeleting(false); }
   }
 
-  function generateReport() {
-    if (!items) return;
-    const lines = [
-      `NOTAS SESSION REPORT`,
-      `═══════════════════════════════════`,
-      `Client:  ${session.client_name || "—"}`,
-      `App:     ${session.app_name}`,
-      `Date:    ${new Date(session.created_at).toLocaleDateString("en-US", { weekday:"long", year:"numeric", month:"long", day:"numeric" })}`,
-      `Status:  ${session.status}`,
-      `Total:   ${items.length} nota${items.length !== 1 ? "s" : ""}`,
-      ``,
-      `BUGS:     ${items.filter(i=>i.type==="bug").length}`,
-      `FEEDBACK: ${items.filter(i=>i.type==="feedback").length}`,
-      `IDEAS:    ${items.filter(i=>i.type==="idea").length}`,
-      ``,
-      `───────────────────────────────────`,
-      `ITEMS`,
-      `───────────────────────────────────`,
-      ...items.map((item, i) => [
-        ``,
-        `#${i+1} [${item.type.toUpperCase()}]${item.severity ? ` — ${item.severity.toUpperCase()}` : ""}`,
-        `Page:    ${item.meta?.page || "—"}`,
-        `Time:    ${new Date(item.created_at).toLocaleTimeString()}`,
-        `Message: ${item.message}`,
-        item.repro ? `Steps:   ${item.repro}` : null,
-        item.screenshot_url ? `Screenshot: ${item.screenshot_url}` : null,
-        item.meta?.consoleErrors?.length ? `Errors:  ${item.meta.consoleErrors.join("; ")}` : null,
-      ].filter(Boolean).join("\n")),
-    ].join("\n");
-    const blob = new Blob([lines], { type:"text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = `notas-report-${session.client_name || session.id.slice(0,8)}.txt`;
-    a.click(); URL.revokeObjectURL(url);
+  async function generateReport() {
+    if (!items || generatingPdf) return;
+    setGeneratingPdf(true);
+    try {
+      // Dynamically imported so jsPDF (~200KB) only loads when someone
+      // actually clicks "Download PDF", not on every dashboard page load.
+      const { jsPDF } = await import("jspdf");
+      const doc = new jsPDF({ unit: "pt", format: "letter" });
+      const PAGE_W = doc.internal.pageSize.getWidth();
+      const PAGE_H = doc.internal.pageSize.getHeight();
+      const MARGIN = 40;
+      const CONTENT_W = PAGE_W - MARGIN * 2;
+      let y = MARGIN;
+
+      function ensureSpace(needed) {
+        if (y + needed > PAGE_H - MARGIN) {
+          doc.addPage();
+          y = MARGIN;
+        }
+      }
+
+      // ── Header ──
+      doc.setFillColor(INK);
+      doc.rect(0, 0, PAGE_W, 70, "F");
+      doc.setTextColor(PAPER);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(20);
+      doc.text("notas", MARGIN, 40);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      doc.text("Session Report", MARGIN, 56);
+      y = 100;
+
+      // ── Session meta ──
+      doc.setTextColor(INK);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(13);
+      doc.text(session.client_name || "Unnamed client", MARGIN, y);
+      y += 18;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      doc.setTextColor(SLATE);
+      doc.text(
+        `App: ${session.app_name}   ·   Date: ${new Date(session.created_at).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}   ·   Status: ${session.status}`,
+        MARGIN, y
+      );
+      y += 26;
+
+      // ── Stats ──
+      const bugsCt = items.filter(i => i.type === "bug").length;
+      const fbCt   = items.filter(i => i.type === "feedback").length;
+      const ideaCt = items.filter(i => i.type === "idea").length;
+      doc.setFontSize(11);
+      doc.setTextColor(INK);
+      doc.text(`${items.length} total nota${items.length !== 1 ? "s" : ""}   —   ${bugsCt} bugs   ${fbCt} feedback   ${ideaCt} ideas`, MARGIN, y);
+      y += 20;
+      doc.setDrawColor(BORDER);
+      doc.line(MARGIN, y, PAGE_W - MARGIN, y);
+      y += 24;
+
+      if (!items.length) {
+        doc.setTextColor(SLATE);
+        doc.text("No notas in this session.", MARGIN, y);
+      }
+
+      // ── Items ──
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const cfg = TYPE_CFG[item.type];
+
+        ensureSpace(30);
+        doc.setFillColor(cfg.color);
+        doc.roundedRect(MARGIN, y - 12, 70, 16, 3, 3, "F");
+        doc.setTextColor("#ffffff");
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(9);
+        doc.text(cfg.label.toUpperCase(), MARGIN + 8, y - 1);
+
+        doc.setTextColor(SLATE);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(9);
+        doc.text(`#${i + 1}   ${new Date(item.created_at).toLocaleTimeString()}`, MARGIN + 80, y - 1);
+        if (item.severity) {
+          doc.text(`Severity: ${item.severity}`, PAGE_W - MARGIN - 110, y - 1);
+        }
+        y += 16;
+
+        // Message
+        doc.setTextColor(INK);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(11);
+        const msgLines = doc.splitTextToSize(item.message, CONTENT_W);
+        ensureSpace(msgLines.length * 14 + 10);
+        doc.text(msgLines, MARGIN, y);
+        y += msgLines.length * 14 + 4;
+
+        // Repro steps
+        if (item.repro) {
+          doc.setTextColor(SLATE);
+          doc.setFont("helvetica", "italic");
+          doc.setFontSize(10);
+          const reproLines = doc.splitTextToSize(`Steps: ${item.repro}`, CONTENT_W);
+          ensureSpace(reproLines.length * 12 + 8);
+          doc.text(reproLines, MARGIN, y);
+          y += reproLines.length * 12 + 8;
+        }
+
+        // Screenshot — actually embedded as an image, not just a linked URL
+        if (item.screenshot_url) {
+          try {
+            const dataUrl = await loadImageAsDataURL(item.screenshot_url);
+            const dims = await getImageDimensions(dataUrl);
+            const maxW = CONTENT_W * 0.6;
+            const maxH = 220;
+            const scale = Math.min(maxW / dims.w, maxH / dims.h, 1);
+            const w = dims.w * scale, h = dims.h * scale;
+            ensureSpace(h + 16);
+            doc.addImage(dataUrl, "PNG", MARGIN, y, w, h);
+            y += h + 12;
+          } catch (imgErr) {
+            console.warn("Notas: could not embed screenshot in PDF —", imgErr?.message || imgErr);
+            doc.setTextColor("#bbbbbb");
+            doc.setFont("helvetica", "italic");
+            doc.setFontSize(9);
+            doc.text("[screenshot could not be embedded]", MARGIN, y);
+            y += 14;
+          }
+        }
+
+        // Console errors, if any
+        if (item.meta?.consoleErrors?.length) {
+          doc.setTextColor("#C0392B");
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(9);
+          const errLines = doc.splitTextToSize(`Console errors: ${item.meta.consoleErrors.join("; ")}`, CONTENT_W);
+          ensureSpace(errLines.length * 11 + 8);
+          doc.text(errLines, MARGIN, y);
+          y += errLines.length * 11 + 8;
+        }
+
+        y += 14;
+        ensureSpace(1);
+        doc.setDrawColor(BORDER);
+        doc.line(MARGIN, y - 8, PAGE_W - MARGIN, y - 8);
+      }
+
+      // ── Footer: page numbers ──
+      const pageCount = doc.internal.getNumberOfPages();
+      for (let p = 1; p <= pageCount; p++) {
+        doc.setPage(p);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(8);
+        doc.setTextColor(SLATE);
+        doc.text(`Page ${p} of ${pageCount}`, PAGE_W - MARGIN - 60, PAGE_H - 20);
+      }
+
+      doc.save(`notas-report-${session.client_name || session.id.slice(0, 8)}.pdf`);
+    } catch (err) {
+      alert("Failed to generate PDF: " + err.message);
+    } finally {
+      setGeneratingPdf(false);
+    }
   }
 
   function exportJSON() {
@@ -142,9 +296,14 @@ function SessionCard({ session, token, onStatusChange }) {
     a.click(); URL.revokeObjectURL(url);
   }
 
-  const bugs     = items ? items.filter(i=>i.type==="bug").length : 0;
-  const feedback = items ? items.filter(i=>i.type==="feedback").length : 0;
-  const ideas    = items ? items.filter(i=>i.type==="idea").length : 0;
+  // Prefer counting the actually-loaded items (freshest — reflects
+  // anything submitted since the list was last fetched) but fall back to
+  // the aggregate counts that came with the session itself from
+  // session_report, so the collapsed card shows real numbers instead of a
+  // placeholder 0 before you've ever expanded it.
+  const bugs     = items ? items.filter(i=>i.type==="bug").length      : (session.bugs ?? 0);
+  const feedback = items ? items.filter(i=>i.type==="feedback").length : (session.feedback ?? 0);
+  const ideas    = items ? items.filter(i=>i.type==="idea").length     : (session.ideas ?? 0);
 
   // Visual treatment per status
   const cardBg     = isArchived ? ARCHIVED_BG : "#fff";
@@ -208,9 +367,9 @@ function SessionCard({ session, token, onStatusChange }) {
                 <UnarchiveIcon/>{archiving ? "Restoring..." : "Restore"}
               </button>
             )}
-            <button onClick={generateReport}
-              style={{ display:"flex", alignItems:"center", gap:5, padding:"6px 12px", borderRadius:7, border:`1.5px solid ${BORDER}`, background:"#fff", cursor:"pointer", fontFamily:"'DM Sans',sans-serif", fontSize:12, fontWeight:600, color:SLATE }}>
-              ↓ Download report
+            <button onClick={generateReport} disabled={generatingPdf}
+              style={{ display:"flex", alignItems:"center", gap:5, padding:"6px 12px", borderRadius:7, border:`1.5px solid ${BORDER}`, background:"#fff", cursor: generatingPdf ? "wait" : "pointer", fontFamily:"'DM Sans',sans-serif", fontSize:12, fontWeight:600, color:SLATE }}>
+              {generatingPdf ? "Generating PDF..." : "↓ Download PDF"}
             </button>
             <button onClick={exportJSON}
               style={{ display:"flex", alignItems:"center", gap:5, padding:"6px 12px", borderRadius:7, border:`1.5px solid ${BORDER}`, background:"#fff", cursor:"pointer", fontFamily:"'DM Sans',sans-serif", fontSize:12, fontWeight:600, color:SLATE }}>
