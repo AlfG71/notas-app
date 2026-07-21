@@ -12,7 +12,7 @@ src/widget/   ← the whole folder, as-is
 ```
 
 Every file inside imports only from siblings in this same folder, plus
-`react`, `react-dom`, and `html2canvas`. Nothing reaches back into the
+`react`, `react-dom`, and `html2canvas-pro`. Nothing reaches back into the
 rest of this repo (`../supabase.js`, `../App.jsx`, etc. are never
 imported from here — that's `supabaseClient.js`'s whole reason for
 existing as a separate, deliberately duplicated file from the dashboard's
@@ -21,11 +21,15 @@ Supabase client).
 ## Dependencies the host project needs
 
 ```
-npm install react react-dom html2canvas
+npm install react react-dom html2canvas-pro
 ```
 
-(react/react-dom are almost certainly already there if it's a React app —
-html2canvas is the only new one.)
+(react/react-dom are almost certainly already there if it's a React app.
+Use `html2canvas-pro`, not stock `html2canvas` — the "-pro" fork adds
+support for modern CSS color functions like `oklch()`/`oklab()`, which
+stock html2canvas can't parse and which Tailwind v4 emits by default.
+Screenshot capture silently fails on any Tailwind v4 host page with stock
+html2canvas.)
 
 ## Usage
 

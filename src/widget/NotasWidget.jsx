@@ -182,12 +182,15 @@ export default function NotasWidget({
       {open && (
         <div style={{ position: "fixed", inset: 0, zIndex: 1000, display: "flex", alignItems: "flex-end", justifyContent: "flex-end", padding: 22 }}>
           <div onClick={() => setOpen(false)} style={{ position: "absolute", inset: 0, background: "rgba(28,25,23,0.4)", backdropFilter: "blur(3px)" }}/>
-          <div style={{ position: "relative", width: step === "annotate" ? 740 : 410, maxWidth: "95vw", borderRadius: 14, overflow: "hidden",
+          <div style={{ position: "relative", width: step === "annotate" ? 740 : 410, maxWidth: "95vw", maxHeight: "90vh", borderRadius: 14, overflow: "hidden",
+            display: "flex", flexDirection: "column",
             boxShadow: "0 24px 64px rgba(28,25,23,0.28)", animation: "notasSlideUp 0.26s cubic-bezier(0.34,1.4,0.64,1)", transition: "width 0.28s cubic-bezier(0.4,0,0.2,1)" }}>
             <style>{`@keyframes notasSlideUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}`}</style>
 
-            {/* Widget header */}
-            <div style={{ background: INK, padding: "13px 15px" }}>
+            {/* Widget header — flexShrink:0 so it can never get squeezed or
+                scrolled out of view by a tall body (e.g. a large annotate
+                canvas); the body below scrolls internally instead. */}
+            <div style={{ background: INK, padding: "13px 15px", flexShrink: 0 }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: step !== "type" && step !== "success" ? 10 : 0 }}>
                 <div>
                   <NotasLogo size="sm" inverted/>
@@ -222,8 +225,10 @@ export default function NotasWidget({
               )}
             </div>
 
-            {/* Widget body */}
-            <div style={{ background: "#fff", padding: step === "annotate" ? 13 : 16 }}>
+            {/* Widget body — scrolls internally, so the header/toolbar above
+                is always reachable even if the content (e.g. a tall
+                annotate canvas) exceeds the available height. */}
+            <div style={{ background: "#fff", padding: step === "annotate" ? 13 : 16, overflowY: "auto", minHeight: 0 }}>
 
               {/* STEP 1: Type */}
               {step === "type" && (

@@ -3,8 +3,8 @@ import react from "@vitejs/plugin-react";
 import { resolve } from "path";
 
 // Builds the npm-importable widget for React/Next.js client projects.
-// react, react-dom, and html2canvas are left external — the host project
-// already has them, so this bundle only ships Notas' own code.
+// react, react-dom, and html2canvas-pro are left external — the host
+// project already has them, so this bundle only ships Notas' own code.
 //
 //   npm run build:widget
 //   → dist-widget/notas-widget.es.js   (import { NotasWidget } from "...")
@@ -21,12 +21,12 @@ export default defineConfig({
       formats: ["es", "cjs"],
     },
     rollupOptions: {
-      external: ["react", "react-dom", "react/jsx-runtime", "html2canvas"],
+      external: ["react", "react-dom", "react/jsx-runtime", "html2canvas-pro"],
       output: {
         globals: {
           react: "React",
           "react-dom": "ReactDOM",
-          html2canvas: "html2canvas",
+          "html2canvas-pro": "html2canvas",
         },
       },
     },
