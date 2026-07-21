@@ -51,6 +51,9 @@ export default function Layout({ children }) {
 | `lang` | no | `"en"` | Initial language. The widget has its own EN/ES toggle a tester can flip mid-session regardless of this. |
 | `position` | no | `"bottom-right"` | Or `"bottom-left"`, for the trigger button's corner. |
 | `onItemSaved` | no | — | Called with the saved item after each successful submit, if you want to react to it in the host app. |
+| `renderTrigger` | no | `true` | Set `false` to hide the built-in floating trigger button and drive opening yourself (see Menu integration below). |
+| `open` | no | — | Controlled open state. If provided, you own showing/hiding the widget instead of its internal state. |
+| `onOpenChange` | no | — | Called with the new open value whenever the widget wants to open or close itself (submit success, backdrop click, X button). Required if you pass `open`. |
 
 ## Where the data goes
 
@@ -66,6 +69,39 @@ want a disconnected, separate Notas instance.
 Sessions are created from `https://notas-app-fawn.vercel.app/dashboard`
 ("New session" → client name + app name → copy the session URL). The
 `sessionId` is the value after `?session=` in that URL.
+
+## Turning it off for a client
+
+Close (or archive) the session from the dashboard. The widget checks its
+session's status on load and stops rendering entirely for anything other
+than "active" — no code change or redeploy needed in the client's project.
+(It fails *open* on a network error, so a brief connectivity hiccup won't
+take feedback capture down — only an explicit closed/archived/missing
+session hides it.)
+
+## Menu integration (persistent, on-demand access)
+
+By default the widget shows its own floating trigger button. If you'd
+rather a client access Notas from your app's own menu — so it's just
+always there for them to use whenever, not a floating overlay — pass
+`renderTrigger={false}` and drive it with `open`/`onOpenChange`:
+
+```jsx
+const [notasOpen, setNotasOpen] = useState(false);
+
+<button onClick={() => setNotasOpen(true)}>Leave feedback</button>
+
+<NotasWidget
+  sessionId={SESSION_ID}
+  renderTrigger={false}
+  open={notasOpen}
+  onOpenChange={setNotasOpen}
+/>
+```
+
+Combined with the session-status gating above: leave the session "active"
+indefinitely if you want this to be a permanent menu item the client can
+use anytime, or close the session whenever you want to retire it.
 
 ## Non-React projects
 

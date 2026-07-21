@@ -29,6 +29,16 @@ async function sbFetch(path, options = {}) {
   return text ? JSON.parse(text) : null;
 }
 
+// Lets the widget check whether the session it's pointed at is still
+// active, so closing a session from the dashboard actually turns the
+// embedded widget off in deployed apps — no redeploy needed. Fails open
+// (treated as active) on network errors so a transient hiccup doesn't take
+// down feedback capture; only an explicit non-"active" status hides it.
+export async function getSessionStatus(sessionId) {
+  const data = await sbFetch(`/feedback_sessions?id=eq.${sessionId}&select=status`);
+  return data?.[0]?.status ?? null; // null = session not found
+}
+
 export async function saveItem(sessionId, item) {
   const data = await sbFetch("/feedback_items", {
     method: "POST",

@@ -5,7 +5,7 @@ import { NotasLogo, BugIcon, ChatIcon, BulbIcon, XIcon, CheckIcon, Spinner } fro
 import AnnotationCanvas from "./AnnotationCanvas";
 import LangToggle from "./LangToggle";
 import { captureScreenshot } from "./useScreenshot";
-import { saveItem, uploadScreenshot } from "./supabaseClient";
+import { saveItem, uploadScreenshot, getSessionStatus } from "./supabaseClient";
 
 const CORNER_STYLES = {
   "bottom-right": { bottom: 24, right: 24 },
@@ -23,6 +23,22 @@ const CORNER_STYLES = {
  * Requires a valid `sessionId` created via the Notas dashboard. Captures a
  * real screenshot of the host page with html2canvas, lets the tester
  * annotate it, and saves the nota straight to Supabase.
+ *
+ * Turning it off: closing (or archiving) the session from the dashboard
+ * makes the widget stop rendering entirely on its next load — no redeploy
+ * needed. It checks the session's status on mount and fails safe (hides
+ * itself) for anything other than "active", but fails open (stays visible)
+ * on a network error so a transient hiccup doesn't take feedback capture
+ * down with it.
+ *
+ * Menu integration: by default the widget renders its own floating trigger
+ * button. To surface it from your own app's menu instead (so a client can
+ * open Notas on demand rather than seeing a floating button), pass
+ * `renderTrigger={false}` and control it yourself with `open`/`onOpenChange`:
+ *
+ *   const [notasOpen, setNotasOpen] = useState(false);
+ *   <button onClick={() => setNotasOpen(true)}>Leave feedback</button>
+ *   <NotasWidget sessionId="..." renderTrigger={false} open={notasOpen} onOpenChange={setNotasOpen} />
  */
 export default function NotasWidget({
   sessionId,
@@ -31,9 +47,18 @@ export default function NotasWidget({
   position = "bottom-right",
   fontsIncluded = false,
   onItemSaved,
+  renderTrigger = true,
+  open: controlledOpen,
+  onOpenChange,
 }) {
   const [lang, setLang]             = useState(initialLang);
-  const [open, setOpen]             = useState(false);
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const isControlled = controlledOpen !== undefined;
+  const open = isControlled ? controlledOpen : uncontrolledOpen;
+  function setOpen(v) {
+    if (!isControlled) setUncontrolledOpen(v);
+    onOpenChange?.(v);
+  }
   const [step, setStep]             = useState("type");
   const [type, setType]             = useState(null);
   const [message, setMessage]       = useState("");
@@ -45,20 +70,42 @@ export default function NotasWidget({
   const [items, setItems]           = useState([]);
   const [report, setReport]         = useState(false);
   const [saving, setSaving]         = useState(false);
+  const [sessionStatus, setSessionStatus] = useState("checking"); // "checking" | "active" | "inactive"
   const rootRef = useRef(null);
   const txtRef  = useRef(null);
   const t = T[lang];
 
+  // Gate on the session's live status so closing it in the dashboard
+  // actually disables the widget in deployed apps.
+  useEffect(() => {
+    if (!sessionId) { setSessionStatus("inactive"); return; }
+    let cancelled = false;
+    setSessionStatus("checking");
+    getSessionStatus(sessionId)
+      .then(status => { if (!cancelled) setSessionStatus(status === "active" ? "active" : "inactive"); })
+      .catch(() => { if (!cancelled) setSessionStatus("active"); }); // fail open on network errors
+    return () => { cancelled = true; };
+  }, [sessionId]);
+
   useEffect(() => { if (step === "describe" && txtRef.current) txtRef.current.focus(); }, [step]);
 
-  async function openWidget() {
-    setOpen(true); setStep("type"); setType(null);
+  // Runs the reset-and-capture sequence whenever the widget opens, whether
+  // that's the internal trigger button or a host app's own menu item
+  // flipping the controlled `open` prop to true.
+  useEffect(() => {
+    if (!open) return;
+    setStep("type"); setType(null);
     setMessage(""); setRepro(""); setSeverity("medium"); setAnnotated(null);
     setScreenshot(null); setCapturing(true);
-    const dataUrl = await captureScreenshot(rootRef.current);
-    setScreenshot(dataUrl);
-    setCapturing(false);
-  }
+    let cancelled = false;
+    captureScreenshot(rootRef.current).then(dataUrl => {
+      if (cancelled) return;
+      setScreenshot(dataUrl);
+      setCapturing(false);
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   async function submit() {
     if (!message.trim() || !sessionId) return;
@@ -98,15 +145,21 @@ export default function NotasWidget({
     console.warn("NotasWidget: no sessionId provided — widget will not render.");
     return null;
   }
+  // Still checking the session's status, or it came back closed/archived/
+  // missing — render nothing either way. (If you're controlling `open`
+  // from your own menu item, that button should also be conditioned on
+  // this eventually settling to "active" if you want it to disappear too;
+  // this early return only covers NotasWidget's own UI.)
+  if (sessionStatus !== "active") return null;
 
   return (
     <div ref={rootRef} style={{ fontFamily: "'DM Sans',sans-serif" }}>
       {!fontsIncluded && <link href={FONT_LINK} rel="stylesheet"/>}
 
       {/* ── TRIGGER BUTTON ── */}
-      {!open && (
+      {!open && renderTrigger && (
         <div style={{ position: "fixed", zIndex: 900, ...CORNER_STYLES[position] }}>
-          <button onClick={openWidget}
+          <button onClick={() => setOpen(true)}
             style={{ display: "flex", alignItems: "center", gap: 8, padding: "11px 20px", borderRadius: 10, border: "none", cursor: "pointer",
               background: INK, color: PAPER, fontSize: 13, fontWeight: 600, fontFamily: "'DM Sans',sans-serif",
               boxShadow: "0 6px 20px rgba(28,25,23,0.3)",
