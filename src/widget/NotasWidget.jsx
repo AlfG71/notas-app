@@ -5,7 +5,7 @@ import { NotasLogo, BugIcon, ChatIcon, BulbIcon, XIcon, CheckIcon, Spinner } fro
 import AnnotationCanvas from "./AnnotationCanvas";
 import LangToggle from "./LangToggle";
 import { captureScreenshot } from "./useScreenshot";
-import { saveItem, uploadScreenshot } from "../supabase";
+import { saveItem, uploadScreenshot } from "./supabaseClient";
 
 const CORNER_STYLES = {
   "bottom-right": { bottom: 24, right: 24 },
