@@ -3,6 +3,17 @@ import { T } from "./i18n";
 import { INK, PAPER, RED, LIGHT, BORDER, SLATE } from "./theme";
 import { PenIcon, ArrIcon, BoxIcon, TextIcon, UndoIcon, ErasIcon } from "./icons";
 
+// Default shape shown before the screenshot has loaded. Real dimensions
+// come from the captured screenshot itself once it loads (see
+// handleImgLoad below) — this used to be hardcoded to 680×310 permanently,
+// which matched the old placeholder screenshot exactly but silently
+// squashed and downsampled every *real* html2canvas capture (typically
+// something like 1512×859) into that tiny fixed buffer as soon as you drew
+// on it, producing a blurry, distorted saved image.
+const DEFAULT_CANVAS = { w: 680, h: 310 };
+const MAX_CANVAS_W = 1600;
+const MAX_CANVAS_H = 900;
+
 // ─── ANNOTATION CANVAS ───────────────────────────────────────────────────────
 export default function AnnotationCanvas({ screenshotData, onAnnotated, lang }) {
   const t = T[lang];
@@ -12,6 +23,7 @@ export default function AnnotationCanvas({ screenshotData, onAnnotated, lang }) 
   const [tool, setTool]       = useState("pen");
   const [color, setColor]     = useState(RED);
   const [strokes, setStrokes] = useState([]);
+  const [canvasSize, setCanvasSize] = useState(DEFAULT_CANVAS);
   const [textInput, setTextInput] = useState(null); // { x, y } — position only
   const textValue  = useRef("");  // current typed value — ref avoids stale closure
   const colorRef   = useRef(RED); // track color in ref too
@@ -55,6 +67,25 @@ export default function AnnotationCanvas({ screenshotData, onAnnotated, lang }) 
       ctx.fillText(s.text, s.s.x, s.s.y);
     }
   }
+
+  // Size the canvas buffer to match the real screenshot's own resolution
+  // and aspect ratio (capped so an oversized capture doesn't blow up
+  // memory), instead of forcing every capture into a fixed 680×310 box.
+  function handleImgLoad() {
+    const img = imgRef.current;
+    if (!img?.naturalWidth || !img?.naturalHeight) return;
+    const scale = Math.min(1, MAX_CANVAS_W / img.naturalWidth, MAX_CANVAS_H / img.naturalHeight);
+    const w = Math.round(img.naturalWidth * scale);
+    const h = Math.round(img.naturalHeight * scale);
+    setCanvasSize(prev => (prev.w === w && prev.h === h ? prev : { w, h }));
+  }
+
+  // Redraw once the canvas element has actually re-rendered at the new
+  // width/height (changing those attributes clears the buffer), not
+  // before — otherwise this would draw onto the stale, still-680×310 canvas.
+  useEffect(() => {
+    if (imgRef.current?.complete) redrawAll();
+  }, [canvasSize]);
 
   useEffect(() => { redrawAll(); }, [strokes]);
 
@@ -154,8 +185,8 @@ export default function AnnotationCanvas({ screenshotData, onAnnotated, lang }) 
       </div>
 
       <div style={{ position: "relative", borderRadius: 8, overflow: "hidden", border: `1.5px solid ${BORDER}` }}>
-        <img ref={imgRef} src={screenshotData} alt="" style={{ display: "none" }} onLoad={() => redrawAll()}/>
-        <canvas ref={canvasRef} width={680} height={310}
+        <img ref={imgRef} src={screenshotData} alt="" style={{ display: "none" }} onLoad={handleImgLoad}/>
+        <canvas ref={canvasRef} width={canvasSize.w} height={canvasSize.h}
           style={{ display: "block", width: "100%", touchAction: "none", cursor: tool === "text" ? "text" : "crosshair" }}
           onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp}
           onTouchStart={onDown} onTouchMove={onMove} onTouchEnd={onUp}
